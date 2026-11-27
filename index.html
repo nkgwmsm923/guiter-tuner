@@ -173,6 +173,15 @@
       </div>
     </div>
 
+    <!-- 画面ロック復帰時の一時停止・ワンタップ再開バナー -->
+    <button id="resumeBanner" type="button" class="hidden my-1 flex w-full items-center justify-between gap-2 rounded-xl border border-gold/60 bg-gold/20 px-3.5 py-2.5 text-left text-xs font-semibold text-goldLight shadow-lg transition active:scale-[0.98]">
+      <span class="flex items-center gap-2">
+        <span class="h-2 w-2 rounded-full bg-goldLight animate-pulse"></span>
+        <span>一時停止中（タップして再開）</span>
+      </span>
+      <span class="rounded-lg bg-gold/30 px-2.5 py-1 text-[11px] text-spruce">再開する</span>
+    </button>
+
     <!-- ==================== 2. メーター＆検出表示エリア ==================== -->
     <section class="relative flex flex-col items-center justify-center rounded-3xl border border-gold/15 bg-rosewood/55 px-3 pt-3 pb-3 shadow-2xl backdrop-blur-sm">
       <!-- 半円アーチ型アナログ針メーター (SVG) -->
@@ -495,6 +504,8 @@
         selectedStringNum: 6,   // 手動モード時のターゲット弦番号 (1..6)
         isMicActive: false,
         isDemoActive: false,
+        isPausedByLock: false,
+        wasMicActiveBeforeHide: false,
         demoTime: 0,
         demoStringIdx: 0,
 
@@ -505,6 +516,9 @@
         micSource: null,
         timeDomainBuffer: null,
         rafId: null,
+        wakeLock: null,
+        recoveryTimer: null,
+        zeroSampleFrames: 0,
 
         // ピッチ平滑化・ホールド用
         freqHistory: [],        // メディアンフィルタ用直近履歴
@@ -527,6 +541,7 @@
         alertBanner: document.getElementById('alertBanner'),
         alertBannerText: document.getElementById('alertBannerText'),
         closeAlertBtn: document.getElementById('closeAlertBtn'),
+        resumeBanner: document.getElementById('resumeBanner'),
 
         meterTicks: document.getElementById('meterTicks'),
         needleGroup: document.getElementById('needleGroup'),
@@ -569,91 +584,91 @@
       };
 
       // ==========================================
-      // 4. 音楽理論・周波数計算ユーティリティ
+      // 4. 音程・周波数計算ユーティリティ
       // ==========================================
 
       /**
-       * MIDIノート番号から周波数(Hz)を計算する（A4キャリブレーション反映）
+       * MIDIノート番号を現在のA4基準ピッチに応じた周波数(Hz)へ変換
        */
       function midiToFreq(midi) {
         return state.a4Freq * Math.pow(2, (midi - 69) / 12);
       }
 
       /**
-       * 周波数(Hz)から最も近いMIDIノート番号（小数）を算出する
+       * 周波数(Hz)を連続値のMIDIノート番号へ変換
        */
       function freqToMidiFloat(freq) {
         return 69 + 12 * Math.log2(freq / state.a4Freq);
       }
 
       /**
-       * MIDIノート番号から音名とオクターブを返す（例: 40 -> { name: 'E', octave: 2, full: 'E2' }）
+       * MIDIノート番号から音名・オクターブ・フル表記を取得
        */
       function midiToNoteInfo(midi) {
-        const rounded = Math.round(midi);
-        const noteIndex = ((rounded % 12) + 12) % 12;
-        const octave = Math.floor(rounded / 12) - 1;
+        const noteIndex = ((midi % 12) + 12) % 12;
         const name = NOTE_NAMES[noteIndex];
-        return { name, octave, full: `${name}${octave}`, midi: rounded };
+        const octave = Math.floor(midi / 12) - 1;
+        return { name, octave, full: `${name}${octave}` };
       }
 
       /**
-       * 2つの周波数間のセント差を計算する（freq が targetFreq より高ければプラス）
+       * 2つの周波数間の誤差をセント単位で算出
        */
       function getCentsDiff(freq, targetFreq) {
         return 1200 * Math.log2(freq / targetFreq);
       }
 
-      // ==========================================
-      // 5. 高精度ピッチ検出（YINアルゴリズム + 放物線補間）
-      // ==========================================
-
       /**
-       * 入力波形のRMS（音量実効値）を計算
+       * 時間領域波形のRMS（音量レベル）を計算
        */
       function computeRMS(buffer) {
-        let sumSq = 0;
+        let sum = 0;
         for (let i = 0; i < buffer.length; i++) {
-          sumSq += buffer[i] * buffer[i];
+          sum += buffer[i] * buffer[i];
         }
-        return Math.sqrt(sumSq / buffer.length);
+        return Math.sqrt(sum / buffer.length);
       }
 
+      // ==========================================
+      // 5. YINピッチ検出アルゴリズム（放物線補間付き）
+      // ==========================================
+
       /**
-       * YINアルゴリズムによる基本周波数検出
-       * クラシックギターの低音弦でも倍音誤検出（オクターブエラー）が極めて少ない手法
+       * YINアルゴリズム＋放物線補間による高精度ピッチ検出
+       * クラシックギターの低音弦でも倍音誤検出を抑えて基音を安定検出する
        */
       function detectPitchYIN(buffer, sampleRate) {
-        const bufferSize = buffer.length;
-        const halfSize = Math.floor(bufferSize / 2);
-
+        const halfSize = Math.floor(buffer.length / 2);
         const minTau = Math.max(2, Math.floor(sampleRate / MAX_FREQ));
-        const maxTau = Math.min(halfSize - 1, Math.floor(sampleRate / MIN_FREQ));
+        const maxTau = Math.min(halfSize - 1, Math.ceil(sampleRate / MIN_FREQ));
 
         if (maxTau <= minTau) return null;
 
-        // ステップ1 & 2: 差分関数 d(tau) と 累積平均正規化差分関数 d'(tau) (CMNDF)
-        const cmndf = new Float32Array(maxTau + 1);
-        cmndf[0] = 1;
-        let runningSum = 0;
+        const yinBuffer = new Float32Array(maxTau + 1);
 
+        // 1. 差分関数 d(tau)
         for (let tau = 1; tau <= maxTau; tau++) {
-          let diffSum = 0;
-          // 計算負荷を抑えつつ精度を維持するため halfSize 分を積分
+          let sum = 0;
           for (let i = 0; i < halfSize; i++) {
             const delta = buffer[i] - buffer[i + tau];
-            diffSum += delta * delta;
+            sum += delta * delta;
           }
-          runningSum += diffSum;
-          cmndf[tau] = runningSum === 0 ? 1 : (diffSum * tau) / runningSum;
+          yinBuffer[tau] = sum;
         }
 
-        // ステップ3: 絶対しきい値による極小値探索
+        // 2. 累積平均正規化差分関数 (CMNDF)
+        yinBuffer[0] = 1;
+        let runningSum = 0;
+        for (let tau = 1; tau <= maxTau; tau++) {
+          runningSum += yinBuffer[tau];
+          yinBuffer[tau] = runningSum > 0 ? (yinBuffer[tau] * tau) / runningSum : 1;
+        }
+
+        // 3. しきい値以下となる最初の極小値を探索
         let tauEstimate = -1;
         for (let tau = minTau; tau <= maxTau; tau++) {
-          if (cmndf[tau] < YIN_THRESHOLD) {
-            // 谷の底（局所最小値）まで進む
-            while (tau + 1 <= maxTau && cmndf[tau + 1] < cmndf[tau]) {
+          if (yinBuffer[tau] < YIN_THRESHOLD) {
+            while (tau + 1 <= maxTau && yinBuffer[tau + 1] < yinBuffer[tau]) {
               tau++;
             }
             tauEstimate = tau;
@@ -661,45 +676,200 @@
           }
         }
 
-        // しきい値未満が見つからない場合、全体最小値が十分低ければ採用（0.25未満）
-        if (tauEstimate === -1) {
-          let minVal = 1.0;
-          let minIdx = -1;
-          for (let tau = minTau; tau <= maxTau; tau++) {
-            if (cmndf[tau] < minVal) {
-              minVal = cmndf[tau];
-              minIdx = tau;
-            }
-          }
-          if (minVal < 0.25 && minIdx > minTau && minIdx < maxTau) {
-            tauEstimate = minIdx;
-          } else {
-            return null;
-          }
-        }
+        if (tauEstimate === -1) return null;
 
-        // ステップ4: 放物線補間（Parabolic Interpolation）でサブサンプル精度を算出
+        // 4. 放物線補間でサブサンプル精度の周期を推定
         let betterTau = tauEstimate;
-        if (tauEstimate > 0 && tauEstimate < maxTau) {
-          const s0 = cmndf[tauEstimate - 1];
-          const s1 = cmndf[tauEstimate];
-          const s2 = cmndf[tauEstimate + 1];
-          const denom = 2 * (2 * s1 - s2 - s0);
-          if (Math.abs(denom) > 1e-10) {
-            betterTau = tauEstimate + (s2 - s0) / denom;
+        if (tauEstimate > 1 && tauEstimate < maxTau) {
+          const s0 = yinBuffer[tauEstimate - 1];
+          const s1 = yinBuffer[tauEstimate];
+          const s2 = yinBuffer[tauEstimate + 1];
+          const denom = 2 * s1 - s2 - s0;
+          if (Math.abs(denom) > 1e-12) {
+            betterTau = tauEstimate + (s2 - s0) / (2 * denom);
           }
         }
 
         const freq = sampleRate / betterTau;
-        if (!isFinite(freq) || freq < MIN_FREQ || freq > MAX_FREQ) {
+        if (!Number.isFinite(freq) || freq < MIN_FREQ || freq > MAX_FREQ) {
           return null;
         }
         return freq;
       }
 
       // ==========================================
-      // 6. Web Audio API 初期化・マイク制御
+      // 6. Web Audio API 初期化・マイク制御・iOS復帰対策
       // ==========================================
+
+      /**
+       * Screen Wake Lock API でチューニング中の自動画面ロックを防止
+       */
+      async function requestWakeLock() {
+        if (!('wakeLock' in navigator) || document.hidden || !state.isMicActive) return;
+        try {
+          if (state.wakeLock) return;
+          state.wakeLock = await navigator.wakeLock.request('screen');
+          state.wakeLock.addEventListener('release', () => {
+            state.wakeLock = null;
+          });
+        } catch (err) {
+          // バッテリー節約モードや非対応ブラウザでは静かにフォールバック
+          state.wakeLock = null;
+        }
+      }
+
+      /**
+       * Screen Wake Lock を解放
+       */
+      async function releaseWakeLock() {
+        if (!state.wakeLock) return;
+        try {
+          await state.wakeLock.release();
+        } catch (_) {
+          // 無視
+        } finally {
+          state.wakeLock = null;
+        }
+      }
+
+      /**
+       * 現在のマイクトラックが有効（live かつ未ミュート）か判定
+       */
+      function isMicTrackLive() {
+        if (!state.micStream) return false;
+        const tracks = state.micStream.getAudioTracks();
+        if (!tracks || tracks.length === 0) return false;
+        return tracks.some(t => t.readyState === 'live' && !t.muted);
+      }
+
+      /**
+       * AudioContext の状態変化（iOSの interrupted / suspended）を監視
+       */
+      function handleAudioStateChange() {
+        if (!state.audioCtx || !state.isMicActive) return;
+        const ctxState = state.audioCtx.state;
+        if (ctxState === 'interrupted' || ctxState === 'suspended') {
+          if (document.hidden) {
+            state.wasMicActiveBeforeHide = true;
+          } else {
+            attemptAutoRecovery();
+          }
+        }
+      }
+
+      /**
+       * マイクトラックの ended / mute 発生時のハンドラ
+       */
+      function handleTrackInterrupted() {
+        if (!state.isMicActive) return;
+        if (document.hidden) {
+          state.wasMicActiveBeforeHide = true;
+        } else {
+          attemptAutoRecovery();
+        }
+      }
+
+      /**
+       * 古いオーディオセッション・ストリームを完全に破棄する
+       */
+      function teardownAudioSession(closeContext = false) {
+        if (state.recoveryTimer) {
+          clearTimeout(state.recoveryTimer);
+          state.recoveryTimer = null;
+        }
+        if (state.rafId) {
+          cancelAnimationFrame(state.rafId);
+          state.rafId = null;
+        }
+        if (state.micSource) {
+          try { state.micSource.disconnect(); } catch (_) {}
+          state.micSource = null;
+        }
+        if (state.micStream) {
+          state.micStream.getTracks().forEach(track => {
+            track.removeEventListener('ended', handleTrackInterrupted);
+            track.removeEventListener('mute', handleTrackInterrupted);
+            try { track.stop(); } catch (_) {}
+          });
+          state.micStream = null;
+        }
+        state.analyser = null;
+        state.zeroSampleFrames = 0;
+
+        if (closeContext && state.audioCtx) {
+          const ctxToClose = state.audioCtx;
+          state.audioCtx = null;
+          ctxToClose.onstatechange = null;
+          try { ctxToClose.close().catch(() => {}); } catch (_) {}
+        }
+
+        releaseWakeLock();
+      }
+
+      /**
+       * 自動復帰に失敗した場合、古いセッションを破棄して「一時停止中（タップして再開）」へ移行
+       */
+      function transitionToPausedState() {
+        teardownAudioSession(true);
+        state.isMicActive = false;
+        state.wasMicActiveBeforeHide = false;
+        state.isPausedByLock = true;
+        els.resumeBanner.classList.remove('hidden');
+        updateMicButtonUI();
+        resetMeterDisplay();
+      }
+
+      /**
+       * ロック解除・フォアグラウンド復帰時に自動でAudioContextとマイクの復帰を試みる
+       */
+      async function attemptAutoRecovery() {
+        if (document.hidden) return;
+        if (!state.isMicActive && !state.wasMicActiveBeforeHide) return;
+
+        // すでに正常動作していればループとWake Lockだけ保証する
+        if (state.audioCtx && state.audioCtx.state === 'running' && isMicTrackLive()) {
+          state.isMicActive = true;
+          state.wasMicActiveBeforeHide = false;
+          state.isPausedByLock = false;
+          els.resumeBanner.classList.add('hidden');
+          requestWakeLock();
+          if (!state.rafId) startAnalysisLoop();
+          return;
+        }
+
+        // 450ms以内に正常復帰できなければ安全に一時停止UIへフォールバック
+        if (state.recoveryTimer) clearTimeout(state.recoveryTimer);
+        state.recoveryTimer = setTimeout(() => {
+          state.recoveryTimer = null;
+          const isHealthy = state.isMicActive && state.audioCtx && state.audioCtx.state === 'running' && isMicTrackLive();
+          if (!isHealthy) {
+            transitionToPausedState();
+          }
+        }, 450);
+
+        try {
+          // AudioContextのresumeを試行
+          if (state.audioCtx && state.audioCtx.state !== 'running') {
+            await state.audioCtx.resume();
+          }
+
+          // マイクトラックが死んでいる場合は再取得を試行（失敗してもエラーバナーは出さず一時停止へ）
+          if (!isMicTrackLive()) {
+            await startMicrophone(true);
+          } else if (state.audioCtx && state.audioCtx.state === 'running') {
+            state.isMicActive = true;
+            state.wasMicActiveBeforeHide = false;
+            state.isPausedByLock = false;
+            els.resumeBanner.classList.add('hidden');
+            requestWakeLock();
+            updateMicButtonUI();
+            if (!state.rafId) startAnalysisLoop();
+          }
+        } catch (_) {
+          // iOS Safariでユーザージェスチャーが必要な場合はタイマーまたはここで一時停止UIへ移行
+          transitionToPausedState();
+        }
+      }
 
       /**
        * iOS Safari対策：ユーザー操作内でAudioContextを生成・resumeする
@@ -709,10 +879,15 @@
         if (!AudioContextClass) {
           throw new Error('お使いのブラウザはWeb Audio APIに対応していません。');
         }
+        // 閉じた・壊れたコンテキストがあれば作り直す
+        if (state.audioCtx && state.audioCtx.state === 'closed') {
+          state.audioCtx = null;
+        }
         if (!state.audioCtx) {
           state.audioCtx = new AudioContextClass();
+          state.audioCtx.onstatechange = handleAudioStateChange;
         }
-        if (state.audioCtx.state === 'suspended') {
+        if (state.audioCtx.state === 'suspended' || state.audioCtx.state === 'interrupted') {
           await state.audioCtx.resume();
         }
         return state.audioCtx;
@@ -720,14 +895,20 @@
 
       /**
        * マイクを起動してリアルタイム検出ループを開始
+       * @param {boolean} isAutoRecovery 自動復帰からの呼び出しかどうか
        */
-      async function startMicrophone() {
+      async function startMicrophone(isAutoRecovery = false) {
         hideAlert();
+        els.resumeBanner.classList.add('hidden');
+        state.isPausedByLock = false;
 
         // デモモード中なら停止
         if (state.isDemoActive) {
           stopDemoMode();
         }
+
+        // 既存の古いストリームがあればクリーンアップしてから新規取得
+        teardownAudioSession(false);
 
         try {
           const ctx = await ensureAudioContext();
@@ -746,6 +927,12 @@
             video: false
           });
 
+          // トラックの切断・ミュートを監視
+          stream.getAudioTracks().forEach(track => {
+            track.addEventListener('ended', handleTrackInterrupted);
+            track.addEventListener('mute', handleTrackInterrupted);
+          });
+
           state.micStream = stream;
           state.micSource = ctx.createMediaStreamSource(stream);
           state.analyser = ctx.createAnalyser();
@@ -756,13 +943,25 @@
           state.timeDomainBuffer = new Float32Array(state.analyser.fftSize);
 
           state.isMicActive = true;
+          state.wasMicActiveBeforeHide = false;
           state.freqHistory = [];
           state.lastValidTime = 0;
+          state.zeroSampleFrames = 0;
 
+          if (state.recoveryTimer) {
+            clearTimeout(state.recoveryTimer);
+            state.recoveryTimer = null;
+          }
+
+          requestWakeLock();
           updateMicButtonUI();
           startAnalysisLoop();
         } catch (err) {
           console.error('Microphone error:', err);
+          if (isAutoRecovery) {
+            transitionToPausedState();
+            return;
+          }
           stopMicrophone();
 
           if (err.message === 'NOT_SUPPORTED') {
@@ -782,19 +981,10 @@
        */
       function stopMicrophone() {
         state.isMicActive = false;
-        if (state.rafId) {
-          cancelAnimationFrame(state.rafId);
-          state.rafId = null;
-        }
-        if (state.micSource) {
-          try { state.micSource.disconnect(); } catch (_) {}
-          state.micSource = null;
-        }
-        if (state.micStream) {
-          state.micStream.getTracks().forEach(track => track.stop());
-          state.micStream = null;
-        }
-        state.analyser = null;
+        state.wasMicActiveBeforeHide = false;
+        state.isPausedByLock = false;
+        els.resumeBanner.classList.add('hidden');
+        teardownAudioSession(false);
         updateMicButtonUI();
         resetMeterDisplay();
       }
@@ -954,8 +1144,31 @@
 
           let sampleRate = 48000;
           if (state.isMicActive && state.analyser && state.audioCtx) {
+            // AudioContext停止やトラック死亡をフレーム単位でも検知
+            if (state.audioCtx.state !== 'running' || !isMicTrackLive()) {
+              attemptAutoRecovery();
+              return;
+            }
             state.analyser.getFloatTimeDomainData(state.timeDomainBuffer);
             sampleRate = state.audioCtx.sampleRate;
+
+            // iOSがendedを発火せずに無音(完全0.0)を返し続ける状態を検知
+            let hasNonZero = false;
+            for (let i = 0; i < state.timeDomainBuffer.length; i += 16) {
+              if (state.timeDomainBuffer[i] !== 0) {
+                hasNonZero = true;
+                break;
+              }
+            }
+            if (!hasNonZero) {
+              state.zeroSampleFrames++;
+              if (state.zeroSampleFrames > 90) {
+                transitionToPausedState();
+                return;
+              }
+            } else {
+              state.zeroSampleFrames = 0;
+            }
           } else if (state.isDemoActive) {
             fillDemoBuffer(state.timeDomainBuffer, sampleRate);
           }
@@ -1183,11 +1396,9 @@
 
         els.needleGroup.setAttribute('transform', 'rotate(0 150 148)');
         els.needleGroup.setAttribute('opacity', '0.3');
-        els.needlePolygon.setAttribute('fill', '#d4a359');
-        els.pivotRing.setAttribute('stroke', '#d4a359');
-        els.tunedZoneArc.setAttribute('opacity', '0.35');
-
-        els.detectedStringBadge.textContent = (state.isMicActive || state.isDemoActive) ? '聴き取り中...' : '待機中';
+        els.detectedStringBadge.textContent = state.isPausedByLock
+          ? '一時停止中（タップして再開）'
+          : (state.isMicActive || state.isDemoActive) ? '聴き取り中...' : '待機中';
         els.detectedStringBadge.className = 'mb-0.5 rounded-full border border-gold/25 bg-ebony/80 px-2.5 py-0.5 text-[11px] font-medium text-goldLight/85';
 
         els.noteNameDisplay.textContent = '--';
@@ -1196,7 +1407,9 @@
 
         els.flatIndicator.className = 'text-spruce/25 transition-colors duration-150';
         els.sharpIndicator.className = 'text-spruce/25 transition-colors duration-150';
-        els.inTuneIndicator.textContent = (state.isMicActive || state.isDemoActive) ? '弦を弾いてください' : 'マイクONで開始';
+        els.inTuneIndicator.textContent = state.isPausedByLock
+          ? 'タップしてチューニングを再開'
+          : (state.isMicActive || state.isDemoActive) ? '弦を弾いてください' : 'マイクONで開始';
         els.inTuneIndicator.className = 'rounded-full px-2.5 py-0.5 text-spruce/45 transition-all duration-150';
 
         els.freqDisplay.textContent = '---.- Hz';
@@ -1289,6 +1502,11 @@
           els.micIconOn.classList.add('hidden');
           els.micIconOff.classList.remove('hidden');
           els.micBtnLabel.textContent = 'マイクをOFFにする';
+        } else if (state.isPausedByLock) {
+          els.micToggleBtn.className = 'mic-active-pulse flex w-full items-center justify-center gap-2.5 rounded-2xl border border-goldLight/80 bg-gradient-to-r from-[#a67630] via-[#d4a359] to-[#a67630] py-3.5 text-base font-bold text-[#18120e] shadow-xl transition active:scale-[0.98]';
+          els.micIconOn.classList.remove('hidden');
+          els.micIconOff.classList.add('hidden');
+          els.micBtnLabel.textContent = 'タップしてチューニングを再開';
         } else {
           els.micToggleBtn.className = 'flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gold/45 bg-gradient-to-r from-[#8f6428] via-[#b88740] to-[#966a2c] py-3.5 text-base font-semibold text-[#18120e] shadow-xl transition active:scale-[0.98]';
           els.micIconOn.classList.remove('hidden');
@@ -1365,18 +1583,18 @@
         els.settingsModal.classList.add('hidden');
         els.settingsModal.classList.remove('flex');
       }
-
-      // ==========================================
-      // 11. イベントリスナー登録
-      // ==========================================
-
-      // マイクON/OFFボタン
+      // マイクON/OFFボタン（一時停止中はクリーン再起動）
       els.micToggleBtn.addEventListener('click', () => {
         if (state.isMicActive) {
           stopMicrophone();
         } else {
-          startMicrophone();
+          startMicrophone(false);
         }
+      });
+
+      // 一時停止バナーのタップでクリーン再開
+      els.resumeBanner.addEventListener('click', () => {
+        startMicrophone(false);
       });
 
       // 弦ボタンのクリック（イベント委譲：基準音再生＆手動モード時はターゲット選択）
@@ -1439,10 +1657,33 @@
       // アラート閉じる
       els.closeAlertBtn.addEventListener('click', hideAlert);
 
-      // バックグラウンド移行時にマイクを安全に停止（iOS Safari対策）
+      // 画面ロック・バックグラウンド移行および復帰時の制御（iOS Safari対策）
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden && state.isMicActive) {
-          stopMicrophone();
+        if (document.hidden) {
+          if (state.isMicActive) {
+            state.wasMicActiveBeforeHide = true;
+            if (state.rafId) {
+              cancelAnimationFrame(state.rafId);
+              state.rafId = null;
+            }
+            releaseWakeLock();
+          }
+        } else {
+          if (state.isMicActive || state.wasMicActiveBeforeHide) {
+            attemptAutoRecovery();
+          }
+        }
+      });
+
+      // Safariのbfcache復帰やウィンドウフォーカス復帰時にも状態を確認
+      window.addEventListener('pageshow', () => {
+        if (!document.hidden && (state.isMicActive || state.wasMicActiveBeforeHide)) {
+          attemptAutoRecovery();
+        }
+      });
+      window.addEventListener('focus', () => {
+        if (!document.hidden && (state.isMicActive || state.wasMicActiveBeforeHide)) {
+          attemptAutoRecovery();
         }
       });
 
