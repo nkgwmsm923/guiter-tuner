@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#14100e">
+  <title>クラシックギター・チューナー</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Cormorant Garamond (クラシックな装飾用) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"Hiragino Sans"', '"Hiragino Kaku Gothic ProN"', 'sans-serif'],
+            serif: ['"Cormorant Garamond"', 'Georgia', 'serif'],
+          },
+          colors: {
+            ebony: '#14100e',
+            rosewood: '#211915',
+            mahogany: '#2d211b',
+            spruce: '#e8d5b7',
+            gold: '#d4a359',
+            goldLight: '#ecc888',
+            tuned: '#34d399',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* iOS Safari向け1画面完結・セーフエリア対応スタイル */
+    html, body {
+      height: 100%;
+      height: 100dvh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #14100e;
+      color: #f3ece1;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    /* 背景の高級感あるウッド調グラデーション */
+    .wood-bg {
+      background:
+        radial-gradient(circle at 50% 0%, rgba(212, 163, 89, 0.12) 0%, rgba(20, 16, 14, 0) 55%),
+        radial-gradient(circle at 50% 100%, rgba(92, 54, 34, 0.22) 0%, rgba(20, 16, 14, 0.95) 70%),
+        linear-gradient(180deg, #1a1411 0%, #120e0c 100%);
+    }
+
+    /* セーフエリアパディング */
+    .safe-container {
+      padding-top: max(env(safe-area-inset-top), 12px);
+      padding-bottom: max(env(safe-area-inset-bottom), 14px);
+      padding-left: max(env(safe-area-inset-left), 16px);
+      padding-right: max(env(safe-area-inset-right), 16px);
+    }
+
+    /* チューニング一致時の柔らかなエメラルド発光 */
+    .glow-tuned {
+      text-shadow: 0 0 24px rgba(52, 211, 153, 0.65), 0 0 8px rgba(52, 211, 153, 0.4);
+    }
+
+    .glow-gold {
+      text-shadow: 0 0 18px rgba(212, 163, 89, 0.4);
+    }
+
+    /* 弦ボタンの立体感 */
+    .string-btn {
+      background: linear-gradient(145deg, #271e19, #1b1411);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(232, 213, 183, 0.08);
+      border: 1px solid rgba(212, 163, 89, 0.2);
+      transition: transform 0.12s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    .string-btn:active {
+      transform: scale(0.96);
+    }
+    .string-btn.active-target {
+      background: linear-gradient(145deg, #35271d, #231913);
+      border-color: rgba(212, 163, 89, 0.85);
+      box-shadow: 0 0 16px rgba(212, 163, 89, 0.25), inset 0 1px 0 rgba(236, 200, 136, 0.25);
+    }
+    .string-btn.active-tuned {
+      background: linear-gradient(145deg, #163228, #10241d);
+      border-color: rgba(52, 211, 153, 0.9);
+      box-shadow: 0 0 18px rgba(52, 211, 153, 0.35), inset 0 1px 0 rgba(110, 231, 183, 0.3);
+    }
+    .string-btn.playing-tone {
+      border-color: #ecc888;
+      box-shadow: 0 0 20px rgba(236, 200, 136, 0.4);
+    }
+
+    /* マイク待機時のパルス */
+    @keyframes micPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(212, 163, 89, 0.35); }
+      50% { box-shadow: 0 0 0 10px rgba(212, 163, 89, 0); }
+    }
+    .mic-active-pulse {
+      animation: micPulse 2.2s infinite;
+    }
+
+    /* レンジスライダーのカスタムデザイン */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(232, 213, 183, 0.15);
+      height: 6px;
+      border-radius: 999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #d4a359;
+      border: 2px solid #f5e6cc;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="wood-bg font-sans antialiased">
+
+  <!-- メインコンテナ（1画面完結・縦方向フレックス） -->
+  <div id="app" class="safe-container mx-auto flex h-full w-full max-w-md flex-col justify-between">
+
+    <!-- ==================== 1. ヘッダー ==================== -->
+    <header class="flex items-center justify-between gap-2 pb-1">
+      <div class="flex flex-col">
+        <span class="font-serif text-lg font-bold tracking-wider text-goldLight leading-tight">
+          CLASSICAL TUNER
+        </span>
+        <span id="headerSubtitle" class="text-[11px] text-spruce/60 tracking-wide">
+          スタンダード・A4 = 440Hz
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <!-- デモモード実行中バッジ -->
+        <button id="demoBadge" class="hidden items-center gap-1 rounded-full border border-amber-400/50 bg-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-200 transition active:scale-95">
+          <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          デモ中
+        </button>
+
+        <!-- 設定ボタン -->
+        <button id="openSettingsBtn" aria-label="設定を開く" class="flex items-center gap-1.5 rounded-xl border border-gold/25 bg-rosewood/80 px-3 py-2 text-xs font-medium text-spruce transition hover:border-gold/50 active:scale-95">
+          <svg class="h-4 w-4 text-gold" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>設定</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 権限エラー・お知らせバナー（必要時のみ表示） -->
+    <div id="alertBanner" class="hidden my-1 rounded-xl border border-amber-500/40 bg-amber-950/70 px-3 py-2 text-xs text-amber-100/95 shadow-lg">
+      <div class="flex items-start justify-between gap-2">
+        <p id="alertBannerText" class="leading-relaxed"></p>
+        <button id="closeAlertBtn" class="shrink-0 rounded-lg p-1 text-amber-300/80 hover:text-amber-200" aria-label="閉じる">✕</button>
+      </div>
+    </div>
+
+    <!-- ==================== 2. メーター＆検出表示エリア ==================== -->
+    <section class="relative flex flex-col items-center justify-center rounded-3xl border border-gold/15 bg-rosewood/55 px-3 pt-3 pb-3 shadow-2xl backdrop-blur-sm">
+      <!-- 半円アーチ型アナログ針メーター (SVG) -->
+      <div class="relative w-full max-w-[320px]">
+        <svg id="meterSvg" viewBox="0 0 300 165" class="w-full h-auto overflow-visible">
+          <defs>
+            <!-- 背景アーチのグラデーション -->
+            <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#ef4444" stop-opacity="0.55" />
+              <stop offset="35%" stop-color="#d4a359" stop-opacity="0.7" />
+              <stop offset="50%" stop-color="#34d399" stop-opacity="1" />
+              <stop offset="65%" stop-color="#d4a359" stop-opacity="0.7" />
+              <stop offset="100%" stop-color="#ef4444" stop-opacity="0.55" />
+            </linearGradient>
+            <!-- 針のグロー用フィルタ -->
+            <filter id="needleGlow" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          <!-- 外側ベースアーチ -->
+          <path d="M 28 148 A 122 122 0 0 1 272 148" fill="none" stroke="rgba(232,213,183,0.10)" stroke-width="10" stroke-linecap="round" />
+          <!-- カラーグラデーションアーチ -->
+          <path d="M 28 148 A 122 122 0 0 1 272 148" fill="none" stroke="url(#arcGrad)" stroke-width="3.5" stroke-linecap="round" opacity="0.85" />
+
+          <!-- ±3セントの一致グリーンゾーン強調アーチ -->
+          <path id="tunedZoneArc" d="M 143 26.2 A 122 122 0 0 1 157 26.2" fill="none" stroke="#34d399" stroke-width="7" stroke-linecap="round" opacity="0.45" />
+
+          <!-- 目盛り描画コンテナ（JSで精密生成） -->
+          <g id="meterTicks"></g>
+
+          <!-- ラベル (-50, 0, +50) -->
+          <text x="16" y="159" fill="rgba(232,213,183,0.5)" font-size="10" text-anchor="middle">-50</text>
+          <text x="72" y="64" fill="rgba(232,213,183,0.45)" font-size="9.5" text-anchor="middle">-25</text>
+          <text x="150" y="13" fill="#34d399" font-size="11" font-weight="600" text-anchor="middle">0</text>
+          <text x="228" y="64" fill="rgba(232,213,183,0.45)" font-size="9.5" text-anchor="middle">+25</text>
+          <text x="284" y="159" fill="rgba(232,213,183,0.5)" font-size="10" text-anchor="middle">+50</text>
+
+          <!-- アナログ針グループ（中心: 150, 148） -->
+          <g id="needleGroup" transform="rotate(0 150 148)" opacity="0.35">
+            <!-- 針本体 -->
+            <polygon id="needlePolygon" points="147.8,148 152.2,148 150.7,34 149.3,34" fill="#d4a359" filter="url(#needleGlow)" />
+            <!-- ピボットリング -->
+            <circle cx="150" cy="148" r="7.5" fill="#211915" stroke="#d4a359" stroke-width="2.5" id="pivotRing" />
+            <circle cx="150" cy="148" r="2.5" fill="#ecc888" id="pivotDot" />
+          </g>
+        </svg>
+
+        <!-- 中央の情報オーバーレイ（アーチ内側に美しく配置） -->
+        <div class="pointer-events-none absolute inset-x-0 bottom-2 flex flex-col items-center">
+          <!-- 弦番号バッジ -->
+          <div id="detectedStringBadge" class="mb-0.5 rounded-full border border-gold/25 bg-ebony/80 px-2.5 py-0.5 text-[11px] font-medium text-goldLight/90">
+            待機中
+          </div>
+          <!-- 検出音名 -->
+          <div class="flex items-baseline justify-center gap-0.5 leading-none">
+            <span id="noteNameDisplay" class="font-serif text-5xl font-bold tracking-tight text-spruce/40 transition-colors duration-150">
+              --
+            </span>
+            <span id="noteOctaveDisplay" class="font-sans text-xl font-semibold text-spruce/35 transition-colors duration-150">
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 状態インジケーター（低い ◀ / ピッタリ！ / ▶ 高い） -->
+      <div class="mt-1 flex w-full max-w-[300px] items-center justify-between rounded-xl bg-ebony/60 px-3 py-1.5 text-xs font-medium">
+        <span id="flatIndicator" class="text-spruce/30 transition-colors duration-150">低い ◀</span>
+        <span id="inTuneIndicator" class="rounded-full px-2.5 py-0.5 text-spruce/35 transition-all duration-150">音を鳴らしてください</span>
+        <span id="sharpIndicator" class="text-spruce/30 transition-colors duration-150">▶ 高い</span>
+      </div>
+
+      <!-- 周波数(Hz)・セント誤差・入力レベルバー -->
+      <div class="mt-2 flex w-full max-w-[300px] items-center justify-between text-[12px] text-spruce/70">
+        <div class="flex items-center gap-1.5">
+          <span class="text-spruce/45">周波数:</span>
+          <span id="freqDisplay" class="font-mono font-semibold text-spruce/90">---.- Hz</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-spruce/45">誤差:</span>
+          <span id="centsDisplay" class="font-mono font-semibold text-spruce/90">--.- cents</span>
+        </div>
+      </div>
+
+      <!-- 入力レベル（RMS）極細インジケーター -->
+      <div class="mt-2 h-1 w-full max-w-[300px] overflow-hidden rounded-full bg-ebony/80">
+        <div id="inputLevelBar" class="h-full w-0 rounded-full bg-gradient-to-r from-gold/60 via-goldLight to-tuned transition-all duration-75"></div>
+      </div>
+    </section>
+
+    <!-- ==================== 3. クラシックギター 6弦ヘッドストックエリア ==================== -->
+    <section class="flex flex-1 flex-col justify-center py-1.5">
+      <!-- モード切替バー（オート / 手動・基準音ガイド） -->
+      <div class="mb-2 flex items-center justify-between px-1">
+        <div class="inline-flex rounded-xl border border-gold/20 bg-ebony/80 p-0.5 text-[11px] font-medium">
+          <button id="modeAutoBtn" class="rounded-lg bg-gold/25 px-3 py-1 text-goldLight shadow-sm transition">
+            自動判別
+          </button>
+          <button id="modeManualBtn" class="rounded-lg px-3 py-1 text-spruce/55 transition hover:text-spruce">
+            手動ロック
+          </button>
+        </div>
+        <span class="text-[11px] text-spruce/55">
+          弦をタップで基準音を再生
+        </span>
+      </div>
+
+      <!-- クラシックギター・ヘッドストック風 6弦レイアウト -->
+      <div id="headstockGrid" class="relative grid grid-cols-[1fr_auto_1fr] items-center gap-x-2.5 gap-y-2">
+        <!-- 左列（低音弦：上から 4弦 D3, 5弦 A2, 6弦 E2 ※ペグ配列に準拠） -->
+        <div id="leftStringsCol" class="flex flex-col gap-2">
+          <!-- JSで生成 -->
+        </div>
+
+        <!-- 中央：クラシックギターのスロットヘッド装飾（SVG） -->
+        <div class="flex flex-col items-center justify-center px-0.5 opacity-80">
+          <svg width="36" height="170" viewBox="0 0 36 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- ヘッド外枠 -->
+            <path d="M5 18 C5 8, 12 4, 18 4 C24 4, 31 8, 31 18 L33 156 C33 162, 27 166, 18 166 C9 166, 3 162, 3 156 Z" fill="#231914" stroke="rgba(212,163,89,0.35)" stroke-width="1.2"/>
+            <!-- 左スロット -->
+            <rect x="9" y="24" width="6" height="118" rx="3" fill="#120d0b" stroke="rgba(212,163,89,0.22)" stroke-width="0.9"/>
+            <!-- 右スロット -->
+            <rect x="21" y="24" width="6" height="118" rx="3" fill="#120d0b" stroke="rgba(212,163,89,0.22)" stroke-width="0.9"/>
+            <!-- ローラー（弦巻き） -->
+            <line x1="9" y1="44" x2="15" y2="44" stroke="#e8d5b7" stroke-width="2.5" stroke-opacity="0.5"/>
+            <line x1="9" y1="83" x2="15" y2="83" stroke="#e8d5b7" stroke-width="2.5" stroke-opacity="0.5"/>
+            <line x1="9" y1="122" x2="15" y2="122" stroke="#e8d5b7" stroke-width="2.5" stroke-opacity="0.5"/>
+            <line x1="21" y1="44" x2="27" y2="44" stroke="#e8d5b7" stroke-width="2.5" stroke-opacity="0.5"/>
+            <line x1="21" y1="83" x2="27" y2="83" stroke="#e8d5b7" stroke-width="2.5" stroke-opacity="0.5"/>
+            <line x1="21" y1="122" x2="27" y2="122" stroke="#e8d5b7" stroke-width="2.5" stroke-opacity="0.5"/>
+            <!-- ナット -->
+            <rect x="5" y="156" width="26" height="4" rx="1.5" fill="#e8d5b7" fill-opacity="0.65"/>
+          </svg>
+        </div>
+
+        <!-- 右列（高音弦：上から 3弦 G3, 2弦 B3, 1弦 E4） -->
+        <div id="rightStringsCol" class="flex flex-col gap-2">
+          <!-- JSで生成 -->
+        </div>
+      </div>
+
+      <!-- クロマチックモード時の案内（ヘッドストックの代わりに表示せず、基準音ガイドとして弦は残しつつ注釈を表示） -->
+      <div id="chromaticHint" class="hidden mt-2 text-center text-[11px] text-goldLight/80">
+        クロマチックモード：全12音を自動検出します（各弦タップで基準音再生）
+      </div>
+    </section>
+
+    <!-- ==================== 4. フッター：マイクON/OFFメインボタン ==================== -->
+    <footer class="pt-1">
+      <button id="micToggleBtn" class="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gold/45 bg-gradient-to-r from-[#8f6428] via-[#b88740] to-[#966a2c] py-3.5 text-base font-semibold text-[#18120e] shadow-xl transition active:scale-[0.98]">
+        <!-- マイクアイコン -->
+        <svg id="micIconOn" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 01-14 0v-2M12 19v4m-4 0h8" />
+        </svg>
+        <!-- 停止アイコン -->
+        <svg id="micIconOff" class="hidden h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+        </svg>
+        <span id="micBtnLabel">マイクをONにしてチューニング開始</span>
+      </button>
+    </footer>
+
+  </div>
+
+  <!-- ==================== 設定モーダル（ボトムシート風） ==================== -->
+  <div id="settingsModal" class="fixed inset-0 z-50 hidden items-end justify-center bg-black/70 backdrop-blur-xs transition-opacity sm:items-center">
+    <div class="w-full max-w-md rounded-t-3xl border-t border-gold/30 bg-[#1c1512] px-5 pt-4 pb-7 shadow-2xl sm:rounded-3xl sm:border" style="padding-bottom: max(env(safe-area-inset-bottom), 24px);">
+      <!-- モーダルハンドル＆タイトル -->
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-base font-bold text-spruce">チューナー設定</h2>
+        <button id="closeSettingsBtn" class="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-spruce/80 transition active:scale-95">
+          閉じる
+        </button>
+      </div>
+
+      <!-- 1. チューニングプリセット -->
+      <div class="mb-5">
+        <label class="mb-2 block text-xs font-semibold tracking-wide text-goldLight/90">
+          チューニング・プリセット
+        </label>
+        <div class="grid grid-cols-1 gap-2">
+          <button data-preset="standard" class="preset-btn flex items-center justify-between rounded-xl border border-gold/20 bg-ebony/70 px-3.5 py-2.5 text-left transition active:scale-[0.98]">
+            <div>
+              <div class="text-sm font-semibold text-spruce">スタンダード</div>
+              <div class="text-[11px] text-spruce/55">6弦から E2 - A2 - D3 - G3 - B3 - E4</div>
+            </div>
+            <span class="preset-check hidden text-sm font-bold text-tuned">✓</span>
+          </button>
+
+          <button data-preset="dropD" class="preset-btn flex items-center justify-between rounded-xl border border-gold/20 bg-ebony/70 px-3.5 py-2.5 text-left transition active:scale-[0.98]">
+            <div>
+              <div class="text-sm font-semibold text-spruce">ドロップD</div>
+              <div class="text-[11px] text-spruce/55">6弦をD2に下げる（D2 - A2 - D3 - G3 - B3 - E4）</div>
+            </div>
+            <span class="preset-check hidden text-sm font-bold text-tuned">✓</span>
+          </button>
+
+          <button data-preset="chromatic" class="preset-btn flex items-center justify-between rounded-xl border border-gold/20 bg-ebony/70 px-3.5 py-2.5 text-left transition active:scale-[0.98]">
+            <div>
+              <div class="text-sm font-semibold text-spruce">クロマチック（全12音）</div>
+              <div class="text-[11px] text-spruce/55">すべての半音を自動検出（変則チューニング向け）</div>
+            </div>
+            <span class="preset-check hidden text-sm font-bold text-tuned">✓</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 基準ピッチ（A4）キャリブレーション -->
+      <div class="mb-5 rounded-2xl border border-gold/15 bg-ebony/60 p-3.5">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-xs font-semibold text-goldLight/90">基準ピッチ（A4）</span>
+          <span id="a4ValueDisplay" class="font-mono text-base font-bold text-spruce">440 Hz</span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button id="a4MinusBtn" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-rosewood text-lg font-bold text-spruce active:scale-95">−</button>
+          <input id="a4Slider" type="range" min="430" max="450" step="1" value="440" class="w-full" aria-label="基準ピッチ調整">
+          <button id="a4PlusBtn" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gold/25 bg-rosewood text-lg font-bold text-spruce active:scale-95">＋</button>
+        </div>
+
+        <div class="mt-2.5 flex items-center justify-end gap-2">
+          <button id="quick440Btn" class="rounded-lg border border-gold/25 bg-rosewood px-3 py-1 text-xs font-medium text-spruce/85 transition active:scale-95">
+            440 Hz（標準）
+          </button>
+          <button id="quick442Btn" class="rounded-lg border border-gold/25 bg-rosewood px-3 py-1 text-xs font-medium text-spruce/85 transition active:scale-95">
+            442 Hz（演奏会）
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. デモ音テスト（マイク入力シミュレート） -->
+      <div class="rounded-2xl border border-gold/15 bg-ebony/60 p-3.5">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-xs font-semibold text-spruce">デモ音テスト（マイク入力シミュレート）</div>
+            <div class="mt-0.5 text-[11px] text-spruce/55">
+              マイクなしでギター波形を生成し、YIN検出の動作を確認できます。
+            </div>
+          </div>
+          <button id="toggleDemoBtn" class="shrink-0 rounded-xl border border-amber-400/40 bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-200 transition active:scale-95">
+            開始する
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== JavaScript（音声処理・YIN検出・UI制御） ==================== -->
+  <script>
+    (() => {
+      'use strict';
+
+      // ==========================================
+      // 1. 定数・音階データ・プリセット定義
+      // ==========================================
+      const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+      // クラシックギターの弦定義（MIDIノート番号で管理し、A4キャリブレーションに連動させる）
+      // E2=40, D2=38, A2=45, D3=50, G3=55, B3=59, E4=64
+      const PRESETS = {
+        standard: {
+          name: 'スタンダード',
+          isChromatic: false,
+          strings: [
+            { num: 6, midi: 40, side: 'left', order: 3 },
+            { num: 5, midi: 45, side: 'left', order: 2 },
+            { num: 4, midi: 50, side: 'left', order: 1 },
+            { num: 3, midi: 55, side: 'right', order: 1 },
+            { num: 2, midi: 59, side: 'right', order: 2 },
+            { num: 1, midi: 64, side: 'right', order: 3 },
+          ]
+        },
+        dropD: {
+          name: 'ドロップD',
+          isChromatic: false,
+          strings: [
+            { num: 6, midi: 38, side: 'left', order: 3 },
+            { num: 5, midi: 45, side: 'left', order: 2 },
+            { num: 4, midi: 50, side: 'left', order: 1 },
+            { num: 3, midi: 55, side: 'right', order: 1 },
+            { num: 2, midi: 59, side: 'right', order: 2 },
+            { num: 1, midi: 64, side: 'right', order: 3 },
+          ]
+        },
+        chromatic: {
+          name: 'クロマチック',
+          isChromatic: true,
+          // 基準音ボタン表示用にスタンダードの6弦を保持
+          strings: [
+            { num: 6, midi: 40, side: 'left', order: 3 },
+            { num: 5, midi: 45, side: 'left', order: 2 },
+            { num: 4, midi: 50, side: 'left', order: 1 },
+            { num: 3, midi: 55, side: 'right', order: 1 },
+            { num: 2, midi: 59, side: 'right', order: 2 },
+            { num: 1, midi: 64, side: 'right', order: 3 },
+          ]
+        }
+      };
+
+      // ピッチ検出のパラメータ
+      const FFT_SIZE = 4096;          // 48kHzで約85ms。D2(73.4Hz)を安定検出可能
+      const RMS_THRESHOLD = 0.011;    // 音量ゲート（無音・環境ノイズカット）
+      const YIN_THRESHOLD = 0.16;     // YINのCMNDFしきい値（倍音誤検出を抑制）
+      const MIN_FREQ = 60;            // 検出下限周波数 (Hz)
+      const MAX_FREQ = 1100;          // 検出上限周波数 (Hz)
+      const IN_TUNE_CENTS = 3.0;      // ±3セント以内で一致ハイライト
+
+      // ==========================================
+      // 2. アプリケーション状態管理
+      // ==========================================
+      const state = {
+        presetKey: 'standard',
+        a4Freq: 440,
+        mode: 'auto',           // 'auto' | 'manual'
+        selectedStringNum: 6,   // 手動モード時のターゲット弦番号 (1..6)
+        isMicActive: false,
+        isDemoActive: false,
+        demoTime: 0,
+        demoStringIdx: 0,
+
+        // Web Audio API オブジェクト
+        audioCtx: null,
+        analyser: null,
+        micStream: null,
+        micSource: null,
+        timeDomainBuffer: null,
+        rafId: null,
+
+        // ピッチ平滑化・ホールド用
+        freqHistory: [],        // メディアンフィルタ用直近履歴
+        smoothedCents: 0,
+        smoothedFreq: 0,
+        lastValidTime: 0,
+        currentDetectedString: null,
+        isCurrentlyInTune: false,
+        playingStringNum: null,
+        playingTimeout: null,
+      };
+
+      // ==========================================
+      // 3. DOM要素参照
+      // ==========================================
+      const els = {
+        headerSubtitle: document.getElementById('headerSubtitle'),
+        demoBadge: document.getElementById('demoBadge'),
+        openSettingsBtn: document.getElementById('openSettingsBtn'),
+        alertBanner: document.getElementById('alertBanner'),
+        alertBannerText: document.getElementById('alertBannerText'),
+        closeAlertBtn: document.getElementById('closeAlertBtn'),
+
+        meterTicks: document.getElementById('meterTicks'),
+        needleGroup: document.getElementById('needleGroup'),
+        needlePolygon: document.getElementById('needlePolygon'),
+        pivotRing: document.getElementById('pivotRing'),
+        pivotDot: document.getElementById('pivotDot'),
+        tunedZoneArc: document.getElementById('tunedZoneArc'),
+
+        detectedStringBadge: document.getElementById('detectedStringBadge'),
+        noteNameDisplay: document.getElementById('noteNameDisplay'),
+        noteOctaveDisplay: document.getElementById('noteOctaveDisplay'),
+        flatIndicator: document.getElementById('flatIndicator'),
+        inTuneIndicator: document.getElementById('inTuneIndicator'),
+        sharpIndicator: document.getElementById('sharpIndicator'),
+        freqDisplay: document.getElementById('freqDisplay'),
+        centsDisplay: document.getElementById('centsDisplay'),
+        inputLevelBar: document.getElementById('inputLevelBar'),
+
+        modeAutoBtn: document.getElementById('modeAutoBtn'),
+        modeManualBtn: document.getElementById('modeManualBtn'),
+        leftStringsCol: document.getElementById('leftStringsCol'),
+        rightStringsCol: document.getElementById('rightStringsCol'),
+        chromaticHint: document.getElementById('chromaticHint'),
+
+        micToggleBtn: document.getElementById('micToggleBtn'),
+        micIconOn: document.getElementById('micIconOn'),
+        micIconOff: document.getElementById('micIconOff'),
+        micBtnLabel: document.getElementById('micBtnLabel'),
+
+        settingsModal: document.getElementById('settingsModal'),
+        closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+        presetBtns: document.querySelectorAll('.preset-btn'),
+        a4ValueDisplay: document.getElementById('a4ValueDisplay'),
+        a4Slider: document.getElementById('a4Slider'),
+        a4MinusBtn: document.getElementById('a4MinusBtn'),
+        a4PlusBtn: document.getElementById('a4PlusBtn'),
+        quick440Btn: document.getElementById('quick440Btn'),
+        quick442Btn: document.getElementById('quick442Btn'),
+        toggleDemoBtn: document.getElementById('toggleDemoBtn'),
+      };
+
+      // ==========================================
+      // 4. 音楽理論・周波数計算ユーティリティ
+      // ==========================================
+
+      /**
+       * MIDIノート番号から周波数(Hz)を計算する（A4キャリブレーション反映）
+       */
+      function midiToFreq(midi) {
+        return state.a4Freq * Math.pow(2, (midi - 69) / 12);
+      }
+
+      /**
+       * 周波数(Hz)から最も近いMIDIノート番号（小数）を算出する
+       */
+      function freqToMidiFloat(freq) {
+        return 69 + 12 * Math.log2(freq / state.a4Freq);
+      }
+
+      /**
+       * MIDIノート番号から音名とオクターブを返す（例: 40 -> { name: 'E', octave: 2, full: 'E2' }）
+       */
+      function midiToNoteInfo(midi) {
+        const rounded = Math.round(midi);
+        const noteIndex = ((rounded % 12) + 12) % 12;
+        const octave = Math.floor(rounded / 12) - 1;
+        const name = NOTE_NAMES[noteIndex];
+        return { name, octave, full: `${name}${octave}`, midi: rounded };
+      }
+
+      /**
+       * 2つの周波数間のセント差を計算する（freq が targetFreq より高ければプラス）
+       */
+      function getCentsDiff(freq, targetFreq) {
+        return 1200 * Math.log2(freq / targetFreq);
+      }
+
+      // ==========================================
+      // 5. 高精度ピッチ検出（YINアルゴリズム + 放物線補間）
+      // ==========================================
+
+      /**
+       * 入力波形のRMS（音量実効値）を計算
+       */
+      function computeRMS(buffer) {
+        let sumSq = 0;
+        for (let i = 0; i < buffer.length; i++) {
+          sumSq += buffer[i] * buffer[i];
+        }
+        return Math.sqrt(sumSq / buffer.length);
+      }
+
+      /**
+       * YINアルゴリズムによる基本周波数検出
+       * クラシックギターの低音弦でも倍音誤検出（オクターブエラー）が極めて少ない手法
+       */
+      function detectPitchYIN(buffer, sampleRate) {
+        const bufferSize = buffer.length;
+        const halfSize = Math.floor(bufferSize / 2);
+
+        const minTau = Math.max(2, Math.floor(sampleRate / MAX_FREQ));
+        const maxTau = Math.min(halfSize - 1, Math.floor(sampleRate / MIN_FREQ));
+
+        if (maxTau <= minTau) return null;
+
+        // ステップ1 & 2: 差分関数 d(tau) と 累積平均正規化差分関数 d'(tau) (CMNDF)
+        const cmndf = new Float32Array(maxTau + 1);
+        cmndf[0] = 1;
+        let runningSum = 0;
+
+        for (let tau = 1; tau <= maxTau; tau++) {
+          let diffSum = 0;
+          // 計算負荷を抑えつつ精度を維持するため halfSize 分を積分
+          for (let i = 0; i < halfSize; i++) {
+            const delta = buffer[i] - buffer[i + tau];
+            diffSum += delta * delta;
+          }
+          runningSum += diffSum;
+          cmndf[tau] = runningSum === 0 ? 1 : (diffSum * tau) / runningSum;
+        }
+
+        // ステップ3: 絶対しきい値による極小値探索
+        let tauEstimate = -1;
+        for (let tau = minTau; tau <= maxTau; tau++) {
+          if (cmndf[tau] < YIN_THRESHOLD) {
+            // 谷の底（局所最小値）まで進む
+            while (tau + 1 <= maxTau && cmndf[tau + 1] < cmndf[tau]) {
+              tau++;
+            }
+            tauEstimate = tau;
+            break;
+          }
+        }
+
+        // しきい値未満が見つからない場合、全体最小値が十分低ければ採用（0.25未満）
+        if (tauEstimate === -1) {
+          let minVal = 1.0;
+          let minIdx = -1;
+          for (let tau = minTau; tau <= maxTau; tau++) {
+            if (cmndf[tau] < minVal) {
+              minVal = cmndf[tau];
+              minIdx = tau;
+            }
+          }
+          if (minVal < 0.25 && minIdx > minTau && minIdx < maxTau) {
+            tauEstimate = minIdx;
+          } else {
+            return null;
+          }
+        }
+
+        // ステップ4: 放物線補間（Parabolic Interpolation）でサブサンプル精度を算出
+        let betterTau = tauEstimate;
+        if (tauEstimate > 0 && tauEstimate < maxTau) {
+          const s0 = cmndf[tauEstimate - 1];
+          const s1 = cmndf[tauEstimate];
+          const s2 = cmndf[tauEstimate + 1];
+          const denom = 2 * (2 * s1 - s2 - s0);
+          if (Math.abs(denom) > 1e-10) {
+            betterTau = tauEstimate + (s2 - s0) / denom;
+          }
+        }
+
+        const freq = sampleRate / betterTau;
+        if (!isFinite(freq) || freq < MIN_FREQ || freq > MAX_FREQ) {
+          return null;
+        }
+        return freq;
+      }
+
+      // ==========================================
+      // 6. Web Audio API 初期化・マイク制御
+      // ==========================================
+
+      /**
+       * iOS Safari対策：ユーザー操作内でAudioContextを生成・resumeする
+       */
+      async function ensureAudioContext() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+          throw new Error('お使いのブラウザはWeb Audio APIに対応していません。');
+        }
+        if (!state.audioCtx) {
+          state.audioCtx = new AudioContextClass();
+        }
+        if (state.audioCtx.state === 'suspended') {
+          await state.audioCtx.resume();
+        }
+        return state.audioCtx;
+      }
+
+      /**
+       * マイクを起動してリアルタイム検出ループを開始
+       */
+      async function startMicrophone() {
+        hideAlert();
+
+        // デモモード中なら停止
+        if (state.isDemoActive) {
+          stopDemoMode();
+        }
+
+        try {
+          const ctx = await ensureAudioContext();
+
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('NOT_SUPPORTED');
+          }
+
+          // 楽器音向けに音声処理（エコーキャンセル等）をすべてオフにする
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              autoGainControl: false,
+              noiseSuppression: false,
+            },
+            video: false
+          });
+
+          state.micStream = stream;
+          state.micSource = ctx.createMediaStreamSource(stream);
+          state.analyser = ctx.createAnalyser();
+          state.analyser.fftSize = FFT_SIZE;
+          state.analyser.smoothingTimeConstant = 0;
+
+          state.micSource.connect(state.analyser);
+          state.timeDomainBuffer = new Float32Array(state.analyser.fftSize);
+
+          state.isMicActive = true;
+          state.freqHistory = [];
+          state.lastValidTime = 0;
+
+          updateMicButtonUI();
+          startAnalysisLoop();
+        } catch (err) {
+          console.error('Microphone error:', err);
+          stopMicrophone();
+
+          if (err.message === 'NOT_SUPPORTED') {
+            showAlert('この環境ではマイク入力が利用できません（HTTPS接続が必要です）。各弦をタップして「基準音再生」でのチューニングや、設定から「デモ音テスト」をご利用いただけます。');
+          } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            showAlert('マイクへのアクセスが許可されませんでした。iPhoneの「設定」＞「Safari」＞「マイク」から許可するか、各弦ボタンの基準音再生をご利用ください。');
+          } else if (err.name === 'NotFoundError') {
+            showAlert('使用可能なマイクが見つかりませんでした。各弦をタップして基準音再生をご利用いただけます。');
+          } else {
+            showAlert('マイクの起動に失敗しました。ページを再読み込みしてお試しください。（基準音再生はそのまま利用できます）');
+          }
+        }
+      }
+
+      /**
+       * マイクと検出ループを安全に停止
+       */
+      function stopMicrophone() {
+        state.isMicActive = false;
+        if (state.rafId) {
+          cancelAnimationFrame(state.rafId);
+          state.rafId = null;
+        }
+        if (state.micSource) {
+          try { state.micSource.disconnect(); } catch (_) {}
+          state.micSource = null;
+        }
+        if (state.micStream) {
+          state.micStream.getTracks().forEach(track => track.stop());
+          state.micStream = null;
+        }
+        state.analyser = null;
+        updateMicButtonUI();
+        resetMeterDisplay();
+      }
+
+      // ==========================================
+      // 7. ナイロン弦風の温かい基準音再生（Web Audio API合成）
+      // ==========================================
+
+      /**
+       * クラシックギターのナイロン弦をイメージした温かい基準音を再生
+       */
+      async function playNylonStringTone(midi, stringNum) {
+        try {
+          const ctx = await ensureAudioContext();
+          const now = ctx.currentTime;
+          const freq = midiToFreq(midi);
+          const duration = 3.2;
+
+          // マスターゲイン（自然な爪弾きアタックと指数減衰）
+          const masterGain = ctx.createGain();
+          masterGain.gain.setValueAtTime(0.0001, now);
+          masterGain.gain.linearRampToValueAtTime(0.32, now + 0.014);
+          masterGain.gain.exponentialRampToValueAtTime(0.14, now + 0.45);
+          masterGain.gain.exponentialRampToValueAtTime(0.0008, now + duration);
+
+          // 温かいナイロン弦の質感を作るダイナミック・ローパスフィルター
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.Q.value = 0.8;
+          // 弾いた瞬間は少し明るく、時間とともに丸くこもる特性
+          filter.frequency.setValueAtTime(Math.min(freq * 6.5, 3600), now);
+          filter.frequency.exponentialRampToValueAtTime(Math.max(freq * 2.2, 420), now + 1.4);
+
+          filter.connect(masterGain);
+          masterGain.connect(ctx.destination);
+
+          // 倍音構成：基音（Triangle+Sine）＋ 2倍音 ＋ 3倍音（控えめ）
+          const partials = [
+            { mult: 1.0, type: 'triangle', gain: 0.65 },
+            { mult: 1.0, type: 'sine',     gain: 0.55 },
+            { mult: 2.0, type: 'sine',     gain: 0.24 },
+            { mult: 3.0, type: 'sine',     gain: 0.08 },
+          ];
+
+          partials.forEach(p => {
+            const osc = ctx.createOscillator();
+            const pGain = ctx.createGain();
+            osc.type = p.type;
+            osc.frequency.setValueAtTime(freq * p.mult, now);
+            pGain.gain.setValueAtTime(p.gain, now);
+
+            osc.connect(pGain);
+            pGain.connect(filter);
+
+            osc.start(now);
+            osc.stop(now + duration + 0.05);
+          });
+
+          // 再生中の弦ボタンを一時的に光らせる
+          state.playingStringNum = stringNum;
+          renderStringButtons();
+          if (state.playingTimeout) clearTimeout(state.playingTimeout);
+          state.playingTimeout = setTimeout(() => {
+            state.playingStringNum = null;
+            renderStringButtons();
+          }, 1200);
+
+        } catch (err) {
+          console.error('Tone playback error:', err);
+          showAlert('基準音の再生に失敗しました。iPhoneの消音モードがオフになっているかご確認ください。');
+        }
+      }
+
+      // ==========================================
+      // 8. デモモード（仮想ギター波形生成 → YIN検出テスト）
+      // ==========================================
+
+      function startDemoMode() {
+        if (state.isMicActive) {
+          stopMicrophone();
+        }
+        state.isDemoActive = true;
+        state.demoTime = 0;
+        state.demoStringIdx = 0;
+        state.freqHistory = [];
+        state.timeDomainBuffer = new Float32Array(FFT_SIZE);
+
+        els.demoBadge.classList.remove('hidden');
+        els.demoBadge.classList.add('inline-flex');
+        els.toggleDemoBtn.textContent = '停止する';
+        els.toggleDemoBtn.classList.replace('bg-amber-500/20', 'bg-red-500/25');
+        els.toggleDemoBtn.classList.replace('text-amber-200', 'text-red-200');
+        els.toggleDemoBtn.classList.replace('border-amber-400/40', 'border-red-400/40');
+
+        closeSettingsModal();
+        startAnalysisLoop();
+      }
+
+      function stopDemoMode() {
+        state.isDemoActive = false;
+        if (state.rafId) {
+          cancelAnimationFrame(state.rafId);
+          state.rafId = null;
+        }
+        els.demoBadge.classList.add('hidden');
+        els.demoBadge.classList.remove('inline-flex');
+        els.toggleDemoBtn.textContent = '開始する';
+        els.toggleDemoBtn.classList.replace('bg-red-500/25', 'bg-amber-500/20');
+        els.toggleDemoBtn.classList.replace('text-red-200', 'text-amber-200');
+        els.toggleDemoBtn.classList.replace('border-red-400/40', 'border-amber-400/40');
+        resetMeterDisplay();
+      }
+
+      /**
+       * リアルなギターの倍音付き波形をバッファに書き込み、YINアルゴリズムの動作をシミュレートする
+       */
+      function fillDemoBuffer(buffer, sampleRate) {
+        const preset = PRESETS[state.presetKey];
+        const strings = preset.strings;
+        const targetStr = state.mode === 'manual'
+          ? strings.find(s => s.num === state.selectedStringNum) || strings[0]
+          : strings[state.demoStringIdx % strings.length];
+
+        // 約4.5秒ごとに次の弦へ自動切り替え（オートモード時）
+        state.demoTime += 0.016;
+        if (state.demoTime > 4.5) {
+          state.demoTime = 0;
+          state.demoStringIdx = (state.demoStringIdx + 1) % strings.length;
+        }
+
+        // ピッチが -18セントから徐々に 0セント（ピッタリ）へ合っていく動きを再現
+        const progress = Math.min(state.demoTime / 2.8, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const centsOffset = -18 * (1 - eased) + Math.sin(state.demoTime * 5) * (0.8 * (1 - eased * 0.7));
+        const baseFreq = midiToFreq(targetStr.midi) * Math.pow(2, centsOffset / 1200);
+
+        const omega = 2 * Math.PI * baseFreq / sampleRate;
+        for (let i = 0; i < buffer.length; i++) {
+          // 基音 + 2倍音 + 3倍音 + ごくわずかなノイズ
+          buffer[i] =
+            0.22 * Math.sin(omega * i) +
+            0.12 * Math.sin(2 * omega * i) +
+            0.05 * Math.sin(3 * omega * i) +
+            (Math.random() - 0.5) * 0.006;
+        }
+      }
+
+      // ==========================================
+      // 9. リアルタイム解析＆UI更新ループ
+      // ==========================================
+
+      function startAnalysisLoop() {
+        if (state.rafId) cancelAnimationFrame(state.rafId);
+
+        const loop = () => {
+          if (!state.isMicActive && !state.isDemoActive) return;
+
+          let sampleRate = 48000;
+          if (state.isMicActive && state.analyser && state.audioCtx) {
+            state.analyser.getFloatTimeDomainData(state.timeDomainBuffer);
+            sampleRate = state.audioCtx.sampleRate;
+          } else if (state.isDemoActive) {
+            fillDemoBuffer(state.timeDomainBuffer, sampleRate);
+          }
+
+          // 音量(RMS)を計算してレベルバー更新
+          const rms = computeRMS(state.timeDomainBuffer);
+          const levelPct = Math.min(100, Math.round((rms / 0.18) * 100));
+          els.inputLevelBar.style.width = `${levelPct}%`;
+
+          const nowMs = performance.now();
+
+          if (rms >= RMS_THRESHOLD) {
+            const rawFreq = detectPitchYIN(state.timeDomainBuffer, sampleRate);
+
+            if (rawFreq !== null) {
+              // 直近5フレームの中央値フィルタ（外れ値・突発ノイズを除去）
+              state.freqHistory.push(rawFreq);
+              if (state.freqHistory.length > 5) state.freqHistory.shift();
+
+              const sorted = [...state.freqHistory].sort((a, b) => a - b);
+              const medianFreq = sorted[Math.floor(sorted.length / 2)];
+
+              // ターゲット音（弦またはクロマチック音）を決定
+              const target = resolveTargetNote(medianFreq);
+              const rawCents = getCentsDiff(medianFreq, target.targetFreq);
+              const clampedCents = Math.max(-50, Math.min(50, rawCents));
+
+              // 針のブレを抑えるスムージング（指数移動平均）
+              if (nowMs - state.lastValidTime > 400) {
+                // 無音後の最初の音は素早く追従
+                state.smoothedCents = clampedCents;
+                state.smoothedFreq = medianFreq;
+              } else {
+                state.smoothedCents += (clampedCents - state.smoothedCents) * 0.24;
+                state.smoothedFreq += (medianFreq - state.smoothedFreq) * 0.24;
+              }
+
+              state.lastValidTime = nowMs;
+              updateMeterDisplay(target, state.smoothedFreq, state.smoothedCents);
+            }
+          } else {
+            // 無音が約1.2秒続いたら待機状態へ穏やかに戻す
+            if (state.lastValidTime > 0 && nowMs - state.lastValidTime > 1200) {
+              state.freqHistory = [];
+              resetMeterDisplay();
+            }
+          }
+
+          state.rafId = requestAnimationFrame(loop);
+        };
+
+        state.rafId = requestAnimationFrame(loop);
+      }
+
+      /**
+       * 検出された周波数から、現在のプリセット＆モードに応じたターゲット音・弦を判定
+       */
+      function resolveTargetNote(freq) {
+        const preset = PRESETS[state.presetKey];
+
+        // クロマチックモード（かつオート）の場合は全12音から最も近い音を選択
+        if (preset.isChromatic && state.mode === 'auto') {
+          const midiFloat = freqToMidiFloat(freq);
+          const nearestMidi = Math.round(midiFloat);
+          const noteInfo = midiToNoteInfo(nearestMidi);
+          return {
+            stringNum: null,
+            badgeText: 'クロマチック',
+            noteName: noteInfo.name,
+            octave: noteInfo.octave,
+            targetFreq: midiToFreq(nearestMidi)
+          };
+        }
+
+        // 手動モード：選択されている弦にロック
+        if (state.mode === 'manual') {
+          const str = preset.strings.find(s => s.num === state.selectedStringNum) || preset.strings[0];
+          const noteInfo = midiToNoteInfo(str.midi);
+          return {
+            stringNum: str.num,
+            badgeText: `${str.num}弦（手動ロック）`,
+            noteName: noteInfo.name,
+            octave: noteInfo.octave,
+            targetFreq: midiToFreq(str.midi)
+          };
+        }
+
+        // 自動モード（スタンダード / ドロップD）：最も近い弦を自動判別
+        let closestStr = preset.strings[0];
+        let minAbsCents = Infinity;
+        for (const str of preset.strings) {
+          const strFreq = midiToFreq(str.midi);
+          const absCents = Math.abs(getCentsDiff(freq, strFreq));
+          if (absCents < minAbsCents) {
+            minAbsCents = absCents;
+            closestStr = str;
+          }
+        }
+
+        const noteInfo = midiToNoteInfo(closestStr.midi);
+        return {
+          stringNum: closestStr.num,
+          badgeText: `${closestStr.num}弦`,
+          noteName: noteInfo.name,
+          octave: noteInfo.octave,
+          targetFreq: midiToFreq(closestStr.midi)
+        };
+      }
+
+      // ==========================================
+      // 10. メーター＆UI描画更新関数
+      // ==========================================
+
+      /**
+       * SVGメーターの目盛り（-50〜+50セント）を初期生成
+       */
+      function initMeterTicks() {
+        const cx = 150;
+        const cy = 148;
+        const rOuter = 128;
+        let html = '';
+
+        for (let cents = -50; cents <= 50; cents += 5) {
+          // -50c -> -75deg, 0c -> 0deg, +50c -> +75deg
+          const angleDeg = (cents / 50) * 75;
+          const angleRad = ((angleDeg - 90) * Math.PI) / 180;
+          const isMajor = cents % 25 === 0;
+          const isZero = cents === 0;
+          const len = isZero ? 18 : isMajor ? 14 : 8;
+          const rInner = rOuter - len;
+
+          const x1 = cx + rInner * Math.cos(angleRad);
+          const y1 = cy + rInner * Math.sin(angleRad);
+          const x2 = cx + rOuter * Math.cos(angleRad);
+          const y2 = cy + rOuter * Math.sin(angleRad);
+
+          const strokeColor = isZero
+            ? '#34d399'
+            : Math.abs(cents) <= 5
+              ? 'rgba(52, 211, 153, 0.7)'
+              : isMajor
+                ? 'rgba(232, 213, 183, 0.75)'
+                : 'rgba(232, 213, 183, 0.3)';
+          const strokeWidth = isZero ? 2.6 : isMajor ? 1.8 : 1.1;
+
+          html += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`;
+        }
+        els.meterTicks.innerHTML = html;
+      }
+
+      /**
+       * メーター表示をリアルタイム更新
+       */
+      function updateMeterDisplay(target, freq, cents) {
+        const isInTune = Math.abs(cents) <= IN_TUNE_CENTS;
+        const isFlat = cents < -IN_TUNE_CENTS;
+        const isSharp = cents > IN_TUNE_CENTS;
+
+        // 針の角度（-50c〜+50c を -75度〜+75度にマッピング）
+        const clampedCents = Math.max(-50, Math.min(50, cents));
+        const angle = (clampedCents / 50) * 75;
+        els.needleGroup.setAttribute('transform', `rotate(${angle.toFixed(2)} 150 148)`);
+        els.needleGroup.setAttribute('opacity', '1');
+
+        // 針と中央の色（±3セント以内でエメラルドグリーンに点灯）
+        const activeColor = isInTune ? '#34d399' : '#d4a359';
+        els.needlePolygon.setAttribute('fill', activeColor);
+        els.pivotRing.setAttribute('stroke', activeColor);
+        els.pivotDot.setAttribute('fill', isInTune ? '#a7f3d0' : '#ecc888');
+        els.tunedZoneArc.setAttribute('opacity', isInTune ? '0.95' : '0.4');
+
+        // 音名・オクターブ・弦番号バッジ
+        els.detectedStringBadge.textContent = target.badgeText;
+        els.noteNameDisplay.textContent = target.noteName;
+        els.noteOctaveDisplay.textContent = target.octave;
+
+        if (isInTune) {
+          els.noteNameDisplay.className = 'font-serif text-5xl font-bold tracking-tight text-tuned glow-tuned transition-colors duration-150';
+          els.noteOctaveDisplay.className = 'font-sans text-xl font-semibold text-tuned/90 transition-colors duration-150';
+          els.detectedStringBadge.className = 'mb-0.5 rounded-full border border-tuned/50 bg-tuned/15 px-2.5 py-0.5 text-[11px] font-semibold text-tuned';
+        } else {
+          els.noteNameDisplay.className = 'font-serif text-5xl font-bold tracking-tight text-spruce glow-gold transition-colors duration-150';
+          els.noteOctaveDisplay.className = 'font-sans text-xl font-semibold text-goldLight/85 transition-colors duration-150';
+          els.detectedStringBadge.className = 'mb-0.5 rounded-full border border-gold/35 bg-ebony/85 px-2.5 py-0.5 text-[11px] font-medium text-goldLight';
+        }
+
+        // 状態インジケーター（低い ◀ / ピッタリ！ / ▶ 高い）
+        els.flatIndicator.className = isFlat
+          ? 'font-bold text-amber-400 transition-colors duration-150'
+          : 'text-spruce/25 transition-colors duration-150';
+        els.sharpIndicator.className = isSharp
+          ? 'font-bold text-amber-400 transition-colors duration-150'
+          : 'text-spruce/25 transition-colors duration-150';
+
+        if (isInTune) {
+          els.inTuneIndicator.textContent = 'ピッタリ！';
+          els.inTuneIndicator.className = 'rounded-full bg-tuned/20 px-3 py-0.5 font-bold text-tuned transition-all duration-150';
+        } else {
+          els.inTuneIndicator.textContent = isFlat ? 'もう少し上げて' : 'もう少し下げて';
+          els.inTuneIndicator.className = 'rounded-full px-2.5 py-0.5 text-spruce/65 transition-all duration-150';
+        }
+
+        // 周波数・セント誤差の数値表示
+        els.freqDisplay.textContent = `${freq.toFixed(1)} Hz`;
+        const sign = cents > 0 ? '+' : '';
+        els.centsDisplay.textContent = `${sign}${cents.toFixed(1)} cents`;
+        els.centsDisplay.className = isInTune
+          ? 'font-mono font-bold text-tuned'
+          : 'font-mono font-semibold text-spruce/90';
+
+        // ターゲット弦のハイライト変更があった場合のみ再描画
+        if (state.currentDetectedString !== target.stringNum || state.isCurrentlyInTune !== isInTune) {
+          state.currentDetectedString = target.stringNum;
+          state.isCurrentlyInTune = isInTune;
+          renderStringButtons();
+        }
+      }
+
+      /**
+       * メーターを待機状態にリセット
+       */
+      function resetMeterDisplay() {
+        state.currentDetectedString = null;
+        state.isCurrentlyInTune = false;
+
+        els.needleGroup.setAttribute('transform', 'rotate(0 150 148)');
+        els.needleGroup.setAttribute('opacity', '0.3');
+        els.needlePolygon.setAttribute('fill', '#d4a359');
+        els.pivotRing.setAttribute('stroke', '#d4a359');
+        els.tunedZoneArc.setAttribute('opacity', '0.35');
+
+        els.detectedStringBadge.textContent = (state.isMicActive || state.isDemoActive) ? '聴き取り中...' : '待機中';
+        els.detectedStringBadge.className = 'mb-0.5 rounded-full border border-gold/25 bg-ebony/80 px-2.5 py-0.5 text-[11px] font-medium text-goldLight/85';
+
+        els.noteNameDisplay.textContent = '--';
+        els.noteNameDisplay.className = 'font-serif text-5xl font-bold tracking-tight text-spruce/35 transition-colors duration-150';
+        els.noteOctaveDisplay.textContent = '';
+
+        els.flatIndicator.className = 'text-spruce/25 transition-colors duration-150';
+        els.sharpIndicator.className = 'text-spruce/25 transition-colors duration-150';
+        els.inTuneIndicator.textContent = (state.isMicActive || state.isDemoActive) ? '弦を弾いてください' : 'マイクONで開始';
+        els.inTuneIndicator.className = 'rounded-full px-2.5 py-0.5 text-spruce/45 transition-all duration-150';
+
+        els.freqDisplay.textContent = '---.- Hz';
+        els.centsDisplay.textContent = '--.- cents';
+        els.centsDisplay.className = 'font-mono font-semibold text-spruce/70';
+        els.inputLevelBar.style.width = '0%';
+
+        renderStringButtons();
+      }
+
+      /**
+       * クラシックギターの6弦ボタンをヘッドストック配置で描画
+       */
+      function renderStringButtons() {
+        const preset = PRESETS[state.presetKey];
+        const leftStrings = preset.strings.filter(s => s.side === 'left').sort((a, b) => a.order - b.order);
+        const rightStrings = preset.strings.filter(s => s.side === 'right').sort((a, b) => a.order - b.order);
+
+        const buildButtonHTML = (str) => {
+          const noteInfo = midiToNoteInfo(str.midi);
+          const freq = midiToFreq(str.midi).toFixed(1);
+          const isTarget =
+            (state.mode === 'manual' && state.selectedStringNum === str.num) ||
+            (state.mode === 'auto' && state.currentDetectedString === str.num);
+          const isTunedNow = isTarget && state.isCurrentlyInTune && (state.isMicActive || state.isDemoActive);
+          const isPlaying = state.playingStringNum === str.num;
+
+          let extraClasses = '';
+          if (isTunedNow) extraClasses += ' active-tuned';
+          else if (isTarget) extraClasses += ' active-target';
+          if (isPlaying) extraClasses += ' playing-tone';
+
+          const isLeft = str.side === 'left';
+
+          return `
+            <button data-string="${str.num}" data-midi="${str.midi}"
+              class="string-btn ${extraClasses} flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left">
+              ${isLeft ? `
+                <div class="flex items-center gap-2">
+                  <span class="flex h-7 w-7 items-center justify-center rounded-full bg-ebony/80 text-xs font-bold ${isTunedNow ? 'text-tuned border border-tuned/40' : 'text-goldLight border border-gold/25'}">
+                    ${str.num}
+                  </span>
+                  <div class="flex flex-col leading-tight">
+                    <span class="font-serif text-xl font-bold ${isTunedNow ? 'text-tuned' : 'text-spruce'}">${noteInfo.full}</span>
+                    <span class="font-mono text-[10px] text-spruce/50">${freq}Hz</span>
+                  </div>
+                </div>
+                <span class="text-gold/70 ${isPlaying ? 'scale-110 text-goldLight' : ''}" aria-hidden="true">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M11 5L6 9H2v6h4l5 4V5z" />
+                  </svg>
+                </span>
+              ` : `
+                <span class="text-gold/70 ${isPlaying ? 'scale-110 text-goldLight' : ''}" aria-hidden="true">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M11 5L6 9H2v6h4l5 4V5z" />
+                  </svg>
+                </span>
+                <div class="flex items-center gap-2 text-right">
+                  <div class="flex flex-col leading-tight">
+                    <span class="font-serif text-xl font-bold ${isTunedNow ? 'text-tuned' : 'text-spruce'}">${noteInfo.full}</span>
+                    <span class="font-mono text-[10px] text-spruce/50">${freq}Hz</span>
+                  </div>
+                  <span class="flex h-7 w-7 items-center justify-center rounded-full bg-ebony/80 text-xs font-bold ${isTunedNow ? 'text-tuned border border-tuned/40' : 'text-goldLight border border-gold/25'}">
+                    ${str.num}
+                  </span>
+                </div>
+              `}
+            </button>
+          `;
+        };
+
+        els.leftStringsCol.innerHTML = leftStrings.map(buildButtonHTML).join('');
+        els.rightStringsCol.innerHTML = rightStrings.map(buildButtonHTML).join('');
+
+        // クロマチック時の注釈表示制御
+        if (preset.isChromatic && state.mode === 'auto') {
+          els.chromaticHint.classList.remove('hidden');
+        } else {
+          els.chromaticHint.classList.add('hidden');
+        }
+      }
+
+      /**
+       * マイクON/OFFボタンの見た目更新
+       */
+      function updateMicButtonUI() {
+        if (state.isMicActive) {
+          els.micToggleBtn.className = 'mic-active-pulse flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gold/60 bg-rosewood py-3.5 text-base font-semibold text-goldLight shadow-xl transition active:scale-[0.98]';
+          els.micIconOn.classList.add('hidden');
+          els.micIconOff.classList.remove('hidden');
+          els.micBtnLabel.textContent = 'マイクをOFFにする';
+        } else {
+          els.micToggleBtn.className = 'flex w-full items-center justify-center gap-2.5 rounded-2xl border border-gold/45 bg-gradient-to-r from-[#8f6428] via-[#b88740] to-[#966a2c] py-3.5 text-base font-semibold text-[#18120e] shadow-xl transition active:scale-[0.98]';
+          els.micIconOn.classList.remove('hidden');
+          els.micIconOff.classList.add('hidden');
+          els.micBtnLabel.textContent = 'マイクをONにしてチューニング開始';
+        }
+      }
+
+      /**
+       * ヘッダーや設定モーダル内の表示を現在の状態に同期
+       */
+      function updateSettingsUI() {
+        const preset = PRESETS[state.presetKey];
+        els.headerSubtitle.textContent = `${preset.name}・A4 = ${state.a4Freq}Hz`;
+        els.a4ValueDisplay.textContent = `${state.a4Freq} Hz`;
+        els.a4Slider.value = state.a4Freq;
+
+        // プリセットボタンの選択状態
+        els.presetBtns.forEach(btn => {
+          const isSelected = btn.dataset.preset === state.presetKey;
+          const check = btn.querySelector('.preset-check');
+          if (isSelected) {
+            btn.classList.add('border-gold', 'bg-gold/10');
+            btn.classList.remove('border-gold/20', 'bg-ebony/70');
+            check.classList.remove('hidden');
+          } else {
+            btn.classList.remove('border-gold', 'bg-gold/10');
+            btn.classList.add('border-gold/20', 'bg-ebony/70');
+            check.classList.add('hidden');
+          }
+        });
+
+        // 440 / 442 クイックボタンの強調
+        [
+          { btn: els.quick440Btn, val: 440 },
+          { btn: els.quick442Btn, val: 442 }
+        ].forEach(({ btn, val }) => {
+          if (state.a4Freq === val) {
+            btn.classList.add('border-gold', 'text-goldLight', 'bg-gold/15');
+          } else {
+            btn.classList.remove('border-gold', 'text-goldLight', 'bg-gold/15');
+          }
+        });
+
+        // オート / 手動ボタンの見た目
+        if (state.mode === 'auto') {
+          els.modeAutoBtn.className = 'rounded-lg bg-gold/25 px-3 py-1 text-goldLight shadow-sm transition';
+          els.modeManualBtn.className = 'rounded-lg px-3 py-1 text-spruce/55 transition hover:text-spruce';
+        } else {
+          els.modeAutoBtn.className = 'rounded-lg px-3 py-1 text-spruce/55 transition hover:text-spruce';
+          els.modeManualBtn.className = 'rounded-lg bg-gold/25 px-3 py-1 text-goldLight shadow-sm transition';
+        }
+
+        renderStringButtons();
+      }
+
+      // お知らせバナー制御
+      function showAlert(message) {
+        els.alertBannerText.textContent = message;
+        els.alertBanner.classList.remove('hidden');
+      }
+
+      function hideAlert() {
+        els.alertBanner.classList.add('hidden');
+      }
+
+      // モーダル制御
+      function openSettingsModal() {
+        els.settingsModal.classList.remove('hidden');
+        els.settingsModal.classList.add('flex');
+      }
+
+      function closeSettingsModal() {
+        els.settingsModal.classList.add('hidden');
+        els.settingsModal.classList.remove('flex');
+      }
+
+      // ==========================================
+      // 11. イベントリスナー登録
+      // ==========================================
+
+      // マイクON/OFFボタン
+      els.micToggleBtn.addEventListener('click', () => {
+        if (state.isMicActive) {
+          stopMicrophone();
+        } else {
+          startMicrophone();
+        }
+      });
+
+      // 弦ボタンのクリック（イベント委譲：基準音再生＆手動モード時はターゲット選択）
+      const handleStringClick = (e) => {
+        const btn = e.target.closest('button[data-string]');
+        if (!btn) return;
+        const stringNum = Number(btn.dataset.string);
+        const midi = Number(btn.dataset.midi);
+
+        state.selectedStringNum = stringNum;
+        renderStringButtons();
+        playNylonStringTone(midi, stringNum);
+      };
+      els.leftStringsCol.addEventListener('click', handleStringClick);
+      els.rightStringsCol.addEventListener('click', handleStringClick);
+
+      // オート / 手動モード切替
+      els.modeAutoBtn.addEventListener('click', () => {
+        state.mode = 'auto';
+        updateSettingsUI();
+      });
+      els.modeManualBtn.addEventListener('click', () => {
+        state.mode = 'manual';
+        updateSettingsUI();
+      });
+
+      // 設定モーダル開閉
+      els.openSettingsBtn.addEventListener('click', openSettingsModal);
+      els.closeSettingsBtn.addEventListener('click', closeSettingsModal);
+      els.settingsModal.addEventListener('click', (e) => {
+        if (e.target === els.settingsModal) closeSettingsModal();
+      });
+
+      // プリセット切替
+      els.presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.presetKey = btn.dataset.preset;
+          updateSettingsUI();
+        });
+      });
+
+      // 基準ピッチ（A4）調整
+      const setA4 = (val) => {
+        state.a4Freq = Math.max(430, Math.min(450, Number(val)));
+        updateSettingsUI();
+      };
+      els.a4Slider.addEventListener('input', (e) => setA4(e.target.value));
+      els.a4MinusBtn.addEventListener('click', () => setA4(state.a4Freq - 1));
+      els.a4PlusBtn.addEventListener('click', () => setA4(state.a4Freq + 1));
+      els.quick440Btn.addEventListener('click', () => setA4(440));
+      els.quick442Btn.addEventListener('click', () => setA4(442));
+
+      // デモモード切替
+      els.toggleDemoBtn.addEventListener('click', () => {
+        if (state.isDemoActive) stopDemoMode();
+        else startDemoMode();
+      });
+      els.demoBadge.addEventListener('click', stopDemoMode);
+
+      // アラート閉じる
+      els.closeAlertBtn.addEventListener('click', hideAlert);
+
+      // バックグラウンド移行時にマイクを安全に停止（iOS Safari対策）
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden && state.isMicActive) {
+          stopMicrophone();
+        }
+      });
+
+      // ==========================================
+      // 12. 初期化実行
+      // ==========================================
+      initMeterTicks();
+      updateSettingsUI();
+      updateMicButtonUI();
+      resetMeterDisplay();
+    })();
+  </script>
+</body>
+</html>
